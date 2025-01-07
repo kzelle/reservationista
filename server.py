@@ -6,11 +6,23 @@ import json
 import os
 from urllib.parse import parse_qs, urlparse
 from http import HTTPStatus
-from database import db  # Import our database handler
+from database import db
+from git_handler import GitHandler
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Constants
-PORT = 8000
+PORT = 8080
 HOST = "localhost"
+
+# Initialize Git handler
+git_handler = GitHandler(
+    repo_path=os.path.dirname(os.path.abspath(__file__)),
+    github_token=os.getenv('GITHUB_TOKEN'),
+    github_username=os.getenv('GITHUB_USERNAME')
+)
 
 class MessageHandler(http.server.SimpleHTTPRequestHandler):
     """Custom handler for processing messages in our Git-backed messaging application"""
@@ -44,6 +56,13 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 # Get all messages from database
                 messages = db.get_all_messages()
+                
+                # Enhance messages with Git history
+                for message in messages:
+                    history = git_handler.get_message_history(message['id'])
+                    if history:
+                        message['versions'] = len(history)
+                
                 self._send_response(HTTPStatus.OK, 'application/json', messages)
             except Exception as e:
                 self._send_response(
@@ -82,6 +101,13 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Add message to database
                 message_id = db.add_message(message_data['content'])
+                
+                # Save message to Git
+                git_hash = git_handler.save_message(message_data['content'], message_id)
+                
+                if git_hash:
+                    # Update database with Git hash
+                    db.update_git_hash(message_id, git_hash)
                 
                 # Get the newly created message
                 new_message = db.get_message(message_id)
