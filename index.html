@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git-Backed Messaging App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .message {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        #messageForm {
+            margin: 20px 0;
+        }
+        #content {
+            width: 100%;
+            padding: 8px;
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Git-Backed Messaging App</h1>
+    
+    <div id="messageForm">
+        <h3>Send a Message</h3>
+        <textarea id="content" rows="4" placeholder="Type your message here..."></textarea>
+        <br>
+        <button onclick="sendMessage()">Send Message</button>
+    </div>
+
+    <div id="messages">
+        <h3>Messages</h3>
+        <!-- Messages will be displayed here -->
+    </div>
+
+    <script>
+        // Function to send a message
+        async function sendMessage() {
+            const content = document.getElementById('content').value;
+            if (!content.trim()) return;
+
+            try {
+                const response = await fetch('http://localhost:8000/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ content })
+                });
+
+                if (response.ok) {
+                    document.getElementById('content').value = '';
+                    loadMessages();
+                } else {
+                    console.error('Failed to send message');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Function to load messages
+        async function loadMessages() {
+            try {
+                const response = await fetch('http://localhost:8000/messages');
+                const messages = await response.json();
+                
+                const messagesDiv = document.getElementById('messages');
+                const messagesHtml = messages.map(msg => `
+                    <div class="message">
+                        <div>${msg.content}</div>
+                        <small>Sent at: ${new Date(msg.timestamp).toLocaleString()}</small>
+                    </div>
+                `).join('');
+                
+                messagesDiv.innerHTML = '<h3>Messages</h3>' + messagesHtml;
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Load messages when the page loads
+        loadMessages();
+        
+        // Reload messages every 5 seconds
+        setInterval(loadMessages, 5000);
+    </script>
+</body>
+</html>
