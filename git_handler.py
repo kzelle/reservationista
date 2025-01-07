@@ -45,18 +45,28 @@ class GitHandler:
             check: Whether to raise an exception on command failure
         """
         try:
-            return subprocess.run(
+            result = subprocess.run(
                 ['git'] + command,
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
                 check=check
             )
+            if not check:
+                return result
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    returncode=result.returncode,
+                    cmd=['git'] + command,
+                    output=result.stdout,
+                    stderr=result.stderr
+                )
+            return result
         except subprocess.CalledProcessError as e:
             print(f"Git command failed: {e}")
             if check:
                 raise
-            return e.returncode
+            return e
 
     def save_message(self, message_content: str, message_id: int) -> Optional[str]:
         """
