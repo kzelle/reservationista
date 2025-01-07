@@ -39,11 +39,13 @@ class TestGitHandler(unittest.TestCase):
     @patch('subprocess.run')
     def test_save_message(self, mock_run):
         """Test saving a message"""
-        # Mock successful git commands
-        mock_run.return_value = MagicMock(
+        # Create a mock CompletedProcess object
+        mock_process = MagicMock(
             stdout="test_commit_hash\n",
-            returncode=0
+            returncode=0,
+            stderr=""
         )
+        mock_run.return_value = mock_process
 
         # Test data
         message_content = "Test message"
@@ -81,8 +83,13 @@ class TestGitHandler(unittest.TestCase):
     @patch('subprocess.run')
     def test_save_message_git_error(self, mock_run):
         """Test handling git command failure"""
-        # Mock git command failure
-        mock_run.side_effect = Exception("Git command failed")
+        # Create a mock CompletedProcess object with error
+        mock_process = MagicMock(
+            stdout="",
+            returncode=1,
+            stderr="error: could not add file"
+        )
+        mock_run.return_value = mock_process
 
         # Test data
         message_content = "Test message"
@@ -93,6 +100,17 @@ class TestGitHandler(unittest.TestCase):
 
         # Verify no commit hash is returned
         self.assertIsNone(commit_hash)
+
+        # Verify file was still created
+        message_files = list(Path(self.test_dir).glob('messages/message_1_*.json'))
+        self.assertEqual(len(message_files), 1)
+
+        # Verify file contents
+        with open(message_files[0], 'r') as f:
+            message_data = json.load(f)
+            self.assertEqual(message_data['content'], message_content)
+            self.assertEqual(message_data['id'], message_id)
+            self.assertIn('timestamp', message_data)
 
     def test_get_message_history(self):
         """Test retrieving message history"""
