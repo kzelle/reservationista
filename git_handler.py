@@ -24,6 +24,9 @@ class GitHandler:
         self.messages_dir = self.repo_path / 'messages'
         self.github_token = github_token
         self.github_username = github_username
+        
+        # Create repository directory if it doesn't exist
+        self.repo_path.mkdir(parents=True, exist_ok=True)
         self.messages_dir.mkdir(exist_ok=True)
         
         # GitHub API configuration
@@ -35,13 +38,17 @@ class GitHandler:
 
     def _run_git_command(self, command: List[str]) -> subprocess.CompletedProcess:
         """Run a git command and return the result"""
-        return subprocess.run(
-            ['git'] + command,
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        try:
+            return subprocess.run(
+                ['git'] + command,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Git command failed: {e}")
+            raise
 
     def save_message(self, message_content: str, message_id: int) -> Optional[str]:
         """
@@ -71,20 +78,25 @@ class GitHandler:
             with open(file_path, 'w') as f:
                 json.dump(message_data, f, indent=2)
             
-            # Stage the file
-            self._run_git_command(['add', str(file_path)])
+            try:
+                # Stage the file
+                self._run_git_command(['add', str(file_path)])
+                
+                # Create commit
+                commit_message = f"Add message {message_id}"
+                self._run_git_command(['commit', '-m', commit_message])
+                
+                # Push to GitHub
+                self._run_git_command(['push', 'origin', 'main'])
+                
+                # Get commit hash
+                result = self._run_git_command(['rev-parse', 'HEAD'])
+                return result.stdout.strip()
             
-            # Create commit
-            commit_message = f"Add message {message_id}"
-            self._run_git_command(['commit', '-m', commit_message])
-            
-            # Push to GitHub
-            self._run_git_command(['push', 'origin', 'main'])
-            
-            # Get commit hash
-            result = self._run_git_command(['rev-parse', 'HEAD'])
-            return result.stdout.strip()
-            
+            except subprocess.CalledProcessError:
+                # If git commands fail, still keep the file but return None
+                return None
+                
         except (subprocess.CalledProcessError, IOError) as e:
             print(f"Error saving message: {e}")
             return None
@@ -135,6 +147,9 @@ class GitHandler:
         repo_url = f"https://{github_token}@github.com/{github_username}/{repo_name}.git"
         
         try:
+            # Create the directory if it doesn't exist
+            os.makedirs(local_path, exist_ok=True)
+            
             # Clone the repository
             subprocess.run(
                 ['git', 'clone', repo_url, local_path],
