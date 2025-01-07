@@ -88,18 +88,24 @@ class GitHandler:
             
             try:
                 # Stage the file
-                self._run_git_command(['add', str(file_path)], check=False)
+                add_result = self._run_git_command(['add', str(file_path)], check=False)
+                if not isinstance(add_result, subprocess.CompletedProcess) or add_result.returncode != 0:
+                    return None
                 
                 # Create commit
-                self._run_git_command(['commit', '-m', f"Add message {message_id}"], check=False)
+                commit_result = self._run_git_command(['commit', '-m', f"Add message {message_id}"], check=False)
+                if not isinstance(commit_result, subprocess.CompletedProcess) or commit_result.returncode != 0:
+                    return None
                 
                 # Push to GitHub
-                self._run_git_command(['push', 'origin', 'main'], check=False)
+                push_result = self._run_git_command(['push', 'origin', 'main'], check=False)
+                if not isinstance(push_result, subprocess.CompletedProcess) or push_result.returncode != 0:
+                    return None
                 
                 # Get commit hash
-                result = self._run_git_command(['rev-parse', 'HEAD'], check=False)
-                if isinstance(result, subprocess.CompletedProcess) and result.returncode == 0:
-                    return result.stdout.strip()
+                hash_result = self._run_git_command(['rev-parse', 'HEAD'], check=False)
+                if isinstance(hash_result, subprocess.CompletedProcess) and hash_result.returncode == 0:
+                    return hash_result.stdout.strip()
                 return None
                 
             except Exception as e:
