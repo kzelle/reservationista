@@ -1,75 +1,73 @@
-# Chat Application
+# Git-Backed Messaging Application
 
-A simple, real-time chat application that allows users to communicate with each other.
+A lightweight web-based messaging application that uses Git as a backend storage system. This application allows users to send and receive messages while maintaining a complete history of all communications through Git.
 
 ## Features
 
-- Real-time messaging
-- Simple and intuitive user interface
-- Text-based communication
+- Simple and intuitive web interface
+- Message persistence using Git
+- Real-time message updates
+- SQLite database for user management
+- GitHub API integration for backup and sync
+- No framework dependencies
 
-## Prerequisites
+## Tech Stack
 
-- Node.js (v14 or higher)
-- npm (Node Package Manager)
-
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <your-repository-url>
-```
-
-2. Navigate to the project directory:
-```bash
-cd chat-application
-```
-
-3. Install dependencies:
-```bash
-npm install
-```
-
-## Usage
-
-1. Start the server:
-```bash
-npm start
-```
-
-2. Open your web browser and navigate to `http://localhost:3000`
-
-3. Start chatting!
+- Backend: Python (Standard Library)
+- Database: SQLite3
+- Frontend: HTML5, CSS3, JavaScript (Vanilla)
+- Version Control: Git
+- API: GitHub REST API
 
 ## Project Structure
 
 ```
-chat-application/
-├── public/          # Static files
-├── src/             # Source code
-├── package.json     # Project dependencies
-└── README.md        # Project documentation
+reservationista/
+├── .env                 # Environment variables
+├── .gitignore          # Git ignore file
+├── README.md           # Project documentation
+├── static/             # Static files
+│   ├── css/           # Stylesheets
+│   └── js/            # JavaScript files
+├── templates/          # HTML templates
+├── database/          # SQLite database
+└── server.py          # Python server
 ```
 
-## Contributing
+## Setup Instructions
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd reservationista
+   ```
+
+2. Create a GitHub personal access token:
+   - Go to GitHub Settings > Developer Settings > Personal Access Tokens
+   - Generate a new token with `repo` scope
+   - Copy the token
+
+3. Create `.env` file with your GitHub credentials:
+   ```
+   GITHUB_TOKEN=your_personal_access_token
+   GITHUB_USERNAME=your_username
+   ```
+
+4. Install Python (if not already installed)
+   - Required version: Python 3.8+
+
+5. Run the server:
+   ```bash
+   python server.py
+   ```
+
+6. Access the application:
+   Open your web browser and navigate to `http://localhost:8000`
+
+## Development
+
+This project is built incrementally with minimal dependencies. Each component is designed to be simple and maintainable.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Contact
-
-Your Name - your.email@example.com
-Project Link: [https://github.com/yourusername/chat-application](https://github.com/yourusername/chat-application)
-
-## Acknowledgments
-
-* Socket.IO for real-time communication
-* Express.js for the server framework
-* Node.js for the runtime environment
+MIT License - Feel free to use this project for personal or commercial purposes.
