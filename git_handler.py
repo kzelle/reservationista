@@ -36,19 +36,27 @@ class GitHandler:
             'Accept': 'application/vnd.github.v3+json'
         }
 
-    def _run_git_command(self, command: List[str]) -> subprocess.CompletedProcess:
-        """Run a git command and return the result"""
+    def _run_git_command(self, command: List[str], check: bool = True) -> subprocess.CompletedProcess:
+        """
+        Run a git command and return the result
+        
+        Args:
+            command: Git command and arguments
+            check: Whether to raise an exception on command failure
+        """
         try:
             return subprocess.run(
                 ['git'] + command,
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
-                check=True
+                check=check
             )
         except subprocess.CalledProcessError as e:
             print(f"Git command failed: {e}")
-            raise
+            if check:
+                raise
+            return e.returncode
 
     def save_message(self, message_content: str, message_id: int) -> Optional[str]:
         """
@@ -80,24 +88,25 @@ class GitHandler:
             
             try:
                 # Stage the file
-                self._run_git_command(['add', str(file_path)])
+                self._run_git_command(['add', str(file_path)], check=False)
                 
                 # Create commit
-                commit_message = f"Add message {message_id}"
-                self._run_git_command(['commit', '-m', commit_message])
+                self._run_git_command(['commit', '-m', f"Add message {message_id}"], check=False)
                 
                 # Push to GitHub
-                self._run_git_command(['push', 'origin', 'main'])
+                self._run_git_command(['push', 'origin', 'main'], check=False)
                 
                 # Get commit hash
-                result = self._run_git_command(['rev-parse', 'HEAD'])
-                return result.stdout.strip()
-            
-            except subprocess.CalledProcessError:
-                # If git commands fail, still keep the file but return None
+                result = self._run_git_command(['rev-parse', 'HEAD'], check=False)
+                if isinstance(result, subprocess.CompletedProcess) and result.returncode == 0:
+                    return result.stdout.strip()
                 return None
                 
-        except (subprocess.CalledProcessError, IOError) as e:
+            except Exception as e:
+                print(f"Git operations failed: {e}")
+                return None
+                
+        except Exception as e:
             print(f"Error saving message: {e}")
             return None
 
