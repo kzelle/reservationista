@@ -6,6 +6,7 @@ import json
 import os
 from urllib.parse import parse_qs, urlparse
 from http import HTTPStatus
+from database import db  # Import our database handler
 
 # Constants
 PORT = 8000
@@ -40,11 +41,16 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
             return http.server.SimpleHTTPRequestHandler.do_GET(self)
         
         elif path == '/messages':
-            # TODO: Implement message retrieval from SQLite/Git
-            messages = [
-                {"id": 1, "content": "Test message", "timestamp": "2025-01-07T15:33:08-05:00"}
-            ]
-            self._send_response(HTTPStatus.OK, 'application/json', messages)
+            try:
+                # Get all messages from database
+                messages = db.get_all_messages()
+                self._send_response(HTTPStatus.OK, 'application/json', messages)
+            except Exception as e:
+                self._send_response(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    'application/json',
+                    {"error": f"Failed to retrieve messages: {str(e)}"}
+                )
             
         else:
             self._send_response(
@@ -71,19 +77,28 @@ class MessageHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 message_data = json.loads(post_data.decode('utf-8'))
                 
-                # TODO: Implement message storage in SQLite/Git
-                response_data = {
-                    "status": "success",
-                    "message": "Message received",
-                    "data": message_data
-                }
-                self._send_response(HTTPStatus.CREATED, 'application/json', response_data)
+                if 'content' not in message_data:
+                    raise ValueError("Message content is required")
+                
+                # Add message to database
+                message_id = db.add_message(message_data['content'])
+                
+                # Get the newly created message
+                new_message = db.get_message(message_id)
+                
+                self._send_response(HTTPStatus.CREATED, 'application/json', new_message)
                 
             except json.JSONDecodeError:
                 self._send_response(
                     HTTPStatus.BAD_REQUEST,
                     'application/json',
                     {"error": "Invalid JSON data"}
+                )
+            except Exception as e:
+                self._send_response(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    'application/json',
+                    {"error": f"Failed to create message: {str(e)}"}
                 )
         else:
             self._send_response(
