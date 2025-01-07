@@ -100,22 +100,26 @@ class GitHandler:
                 # Stage the file
                 add_result = self._run_git_command(['add', str(file_path)], check=False)
                 if not isinstance(add_result, subprocess.CompletedProcess) or add_result.returncode != 0:
+                    print(f"Failed to stage file: {add_result.stderr if hasattr(add_result, 'stderr') else 'Unknown error'}")
                     return None
                 
                 # Create commit
                 commit_result = self._run_git_command(['commit', '-m', f"Add message {message_id}"], check=False)
                 if not isinstance(commit_result, subprocess.CompletedProcess) or commit_result.returncode != 0:
+                    print(f"Failed to commit: {commit_result.stderr if hasattr(commit_result, 'stderr') else 'Unknown error'}")
                     return None
                 
                 # Push to GitHub
                 push_result = self._run_git_command(['push', 'origin', 'main'], check=False)
                 if not isinstance(push_result, subprocess.CompletedProcess) or push_result.returncode != 0:
+                    print(f"Failed to push: {push_result.stderr if hasattr(push_result, 'stderr') else 'Unknown error'}")
                     return None
                 
                 # Get commit hash
                 hash_result = self._run_git_command(['rev-parse', 'HEAD'], check=False)
                 if isinstance(hash_result, subprocess.CompletedProcess) and hash_result.returncode == 0:
                     return hash_result.stdout.strip()
+                print(f"Failed to get commit hash: {hash_result.stderr if hasattr(hash_result, 'stderr') else 'Unknown error'}")
                 return None
                 
             except Exception as e:
