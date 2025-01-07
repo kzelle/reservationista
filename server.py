@@ -1,157 +1,205 @@
 #!/usr/bin/env python3
 
-import http.server
-import socketserver
 import json
 import os
-from urllib.parse import parse_qs, urlparse
-from http import HTTPStatus
-from database import db
-from git_handler import GitHandler
+import asyncio
+import socketserver
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse, parse_qs
 from dotenv import load_dotenv
+from database.db import Database
+from github_manager import GitHubManager
 
-# Load environment variables
 load_dotenv()
 
 # Constants
-PORT = 8080
+PORT = 8004
 HOST = "localhost"
 
-# Initialize Git handler
-git_handler = GitHandler(
-    repo_path=os.path.dirname(os.path.abspath(__file__)),
-    github_token=os.getenv('GITHUB_TOKEN'),
-    github_username=os.getenv('GITHUB_USERNAME')
-)
+# Initialize managers
+db = Database()
+github_manager = GitHubManager()
 
-class MessageHandler(http.server.SimpleHTTPRequestHandler):
-    """Custom handler for processing messages in our Git-backed messaging application"""
-
-    def _send_response(self, status_code, content_type, response_data):
-        """Helper method to send HTTP responses"""
-        self.send_response(status_code)
-        self.send_header('Content-Type', content_type)
-        self.send_header('Access-Control-Allow-Origin', '*')  # Enable CORS for development
-        self.end_headers()
-        
-        if response_data:
-            self.wfile.write(json.dumps(response_data).encode('utf-8'))
-
+class MessageHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        """Handle GET requests
-        
-        Routes:
-        / - Serve the main page
-        /messages - Get all messages
-        /messages/{id} - Get a specific message
-        """
+        """Handle GET requests"""
         parsed_path = urlparse(self.path)
-        path = parsed_path.path
-
-        if path == '/':
-            # Serve the main page
-            return http.server.SimpleHTTPRequestHandler.do_GET(self)
         
-        elif path == '/messages':
-            try:
-                # Get all messages from database
+        if parsed_path.path == '/':
+            self.serve_static_file('static/index.html', 'text/html')
+        elif parsed_path.path == '/messages':
+            self.handle_get_messages()
+        elif parsed_path.path == '/repositories':
+            self.handle_get_repositories()
+        else:
+            self.send_error(404, "Not Found")
+    
+    def do_POST(self):
+        """Handle POST requests"""
+        if self.path == '/messages':
+            self.handle_post_message()
+        elif self.path == '/repositories':
+            self.handle_post_repository()
+        elif self.path == '/push':
+            self.handle_push_repository()
+        else:
+            self.send_error(404, "Not Found")
+    
+    def serve_static_file(self, filepath: str, content_type: str):
+        """Serve a static file"""
+        try:
+            with open(filepath, 'rb') as f:
+                content = f.read()
+            
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.end_headers()
+            self.wfile.write(content)
+        except FileNotFoundError:
+            self.send_error(404, "File not found")
+        except Exception as e:
+            self.send_error(500, f"Error serving file: {str(e)}")
+    
+    def handle_get_messages(self):
+        """Handle GET /messages request"""
+        try:
+            parsed_url = urlparse(self.path)
+            params = parse_qs(parsed_url.query)
+            
+            # Get repository_id from query parameters
+            repository_id = None
+            if 'repository_id' in params:
+                repository_id = int(params['repository_id'][0])
+            
+            if repository_id:
+                messages = db.get_messages_by_repository(repository_id)
+            else:
                 messages = db.get_all_messages()
                 
-                # Enhance messages with Git history
-                for message in messages:
-                    history = git_handler.get_message_history(message['id'])
-                    if history:
-                        message['versions'] = len(history)
-                
-                self._send_response(HTTPStatus.OK, 'application/json', messages)
-            except Exception as e:
-                self._send_response(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    'application/json',
-                    {"error": f"Failed to retrieve messages: {str(e)}"}
-                )
-            
-        else:
-            self._send_response(
-                HTTPStatus.NOT_FOUND,
-                'application/json',
-                {"error": "Route not found"}
-            )
-
-    def do_POST(self):
-        """Handle POST requests
-        
-        Routes:
-        /messages - Create a new message
-        """
-        parsed_path = urlparse(self.path)
-        path = parsed_path.path
-
-        if path == '/messages':
-            # Get the length of the POST data
-            content_length = int(self.headers.get('Content-Length', 0))
-            
-            # Read and parse the POST data
+            self.send_json_response(200, messages)
+        except Exception as e:
+            self.send_error(500, f"Error retrieving messages: {str(e)}")
+    
+    def handle_get_repositories(self):
+        """Handle GET /repositories request"""
+        try:
+            repositories = github_manager.get_repositories()
+            self.send_json_response(200, repositories)
+        except Exception as e:
+            self.send_error(500, f"Error retrieving repositories: {str(e)}")
+    
+    async def handle_post_repository(self):
+        """Handle POST /repositories request"""
+        try:
+            content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
-            try:
-                message_data = json.loads(post_data.decode('utf-8'))
-                
-                if 'content' not in message_data:
-                    raise ValueError("Message content is required")
-                
-                # Add message to database
-                message_id = db.add_message(message_data['content'])
-                
-                # Save message to Git
-                git_hash = git_handler.save_message(message_data['content'], message_id)
-                
-                if git_hash:
-                    # Update database with Git hash
-                    db.update_git_hash(message_id, git_hash)
-                
-                # Get the newly created message
-                new_message = db.get_message(message_id)
-                
-                self._send_response(HTTPStatus.CREATED, 'application/json', new_message)
-                
-            except json.JSONDecodeError:
-                self._send_response(
-                    HTTPStatus.BAD_REQUEST,
-                    'application/json',
-                    {"error": "Invalid JSON data"}
-                )
-            except Exception as e:
-                self._send_response(
-                    HTTPStatus.INTERNAL_SERVER_ERROR,
-                    'application/json',
-                    {"error": f"Failed to create message: {str(e)}"}
-                )
-        else:
-            self._send_response(
-                HTTPStatus.NOT_FOUND,
-                'application/json',
-                {"error": "Route not found"}
+            repo_data = json.loads(post_data.decode('utf-8'))
+            
+            if 'owner' not in repo_data or 'name' not in repo_data:
+                self.send_error(400, "Repository owner and name are required")
+                return
+            
+            # Add repository
+            repository = await github_manager.add_repository(
+                repo_data['owner'],
+                repo_data['name']
             )
-
-    def do_OPTIONS(self):
-        """Handle OPTIONS requests for CORS preflight"""
-        self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            
+            self.send_json_response(201, repository)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON format")
+        except ValueError as e:
+            self.send_error(400, str(e))
+        except Exception as e:
+            self.send_error(500, f"Server error: {str(e)}")
+    
+    async def handle_post_message(self):
+        """Handle POST /messages request"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            message_data = json.loads(post_data.decode('utf-8'))
+            
+            # Validate message content
+            if 'content' not in message_data:
+                self.send_error(400, "Message content is required")
+                return
+                
+            content = message_data['content'].strip()
+            if not content:
+                self.send_error(400, "Message content cannot be empty")
+                return
+                
+            if len(content) > 1000:
+                self.send_error(400, "Message content too long (maximum 1000 characters)")
+                return
+            
+            # Get optional repository_id
+            repository_id = message_data.get('repository_id')
+            
+            # Save message
+            message = await github_manager.save_message(content, repository_id)
+            self.send_json_response(201, message)
+            
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON format")
+        except ValueError as e:
+            self.send_error(400, str(e))
+        except Exception as e:
+            self.send_error(500, f"Server error: {str(e)}")
+    
+    async def handle_push_repository(self):
+        """Handle POST /push request"""
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            repo_data = json.loads(post_data.decode('utf-8'))
+            
+            if 'owner' not in repo_data or 'name' not in repo_data:
+                self.send_error(400, "Repository owner and name are required")
+                return
+            
+            # Push repository
+            result = await github_manager.push_repository(
+                repo_data['owner'],
+                repo_data['name']
+            )
+            
+            self.send_json_response(200, result)
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON format")
+        except ValueError as e:
+            self.send_error(400, str(e))
+        except Exception as e:
+            self.send_error(500, f"Server error: {str(e)}")
+    
+    def send_json_response(self, status: int, data: any):
+        """Send a JSON response"""
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+        self.wfile.write(json.dumps(data).encode('utf-8'))
+
+class AsyncHTTPServer(HTTPServer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+    def service_actions(self):
+        """Run any pending coroutines"""
+        self.loop.stop()
+        self.loop.run_forever()
 
 def run_server():
-    """Start the HTTP server"""
-    with socketserver.TCPServer((HOST, PORT), MessageHandler) as httpd:
-        print(f"Server started at http://{HOST}:{PORT}")
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nShutting down server...")
-            httpd.server_close()
+    """Run the HTTP server"""
+    server_address = (HOST, PORT)
+    with AsyncHTTPServer(server_address, MessageHandler) as httpd:
+        print(f"Server running at http://{HOST}:{PORT}")
+        httpd.serve_forever()
 
 if __name__ == "__main__":
-    # Ensure we serve files from the correct directory
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     run_server()

@@ -110,8 +110,8 @@ class GitHandler:
                     return None
                 
                 # Push to GitHub
-                push_result = self._run_git_command(['push', 'origin', 'main'], check=False)
-                if not isinstance(push_result, subprocess.CompletedProcess) or push_result.returncode != 0:
+                push_result = self.push_changes()
+                if not push_result:
                     print(f"Failed to push: {push_result.stderr if hasattr(push_result, 'stderr') else 'Unknown error'}")
                     return None
                 
@@ -129,6 +129,52 @@ class GitHandler:
         except Exception as e:
             print(f"Error saving message: {e}")
             return None
+
+    def push_changes(self) -> bool:
+        """Push changes to GitHub"""
+        try:
+            # Check if there are changes to push
+            status = subprocess.run(
+                ['git', 'status', '--porcelain'],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True
+            )
+            
+            if not status.stdout.strip():
+                # No changes to push
+                return True
+
+            # Get GitHub token from environment
+            github_token = self.github_token
+            if not github_token:
+                raise ValueError("GitHub token not found")
+
+            # Set remote URL with token
+            remote_url = f"https://{github_token}@github.com/{self.github_username}/{self.repo_path.name}.git"
+            subprocess.run(
+                ['git', 'remote', 'set-url', 'origin', remote_url],
+                cwd=self.repo_path,
+                check=True
+            )
+
+            # Push changes
+            result = subprocess.run(
+                ['git', 'push', '-u', 'origin', 'main'],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                print(f"Push error: {result.stderr}")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Error pushing changes: {str(e)}")
+            return False
 
     def get_message_history(self, message_id: int) -> List[Dict]:
         """

@@ -49,7 +49,7 @@
             if (!content.trim()) return;
 
             try {
-                const response = await fetch('http://localhost:8000/messages', {
+                const response = await fetch('http://localhost:8080/messages', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -71,7 +71,7 @@
         // Function to load messages
         async function loadMessages() {
             try {
-                const response = await fetch('http://localhost:8000/messages');
+                const response = await fetch('http://localhost:8080/messages');
                 const messages = await response.json();
                 
                 const messagesDiv = document.getElementById('messages');

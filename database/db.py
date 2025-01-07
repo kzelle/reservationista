@@ -1,153 +1,134 @@
 #!/usr/bin/env python3
 
 import sqlite3
-import os
 from datetime import datetime
-from typing import Dict, List, Optional
-
-# Database configuration
-DB_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'messages.db')
+from typing import List, Dict, Optional
 
 class Database:
-    """Database handler for the messaging application"""
-    
-    def __init__(self):
-        """Initialize database connection and create tables if they don't exist"""
-        self.conn = None
-        self.cursor = None
-        self.initialize()
+    def __init__(self, db_path: str = "messages.db"):
+        """Initialize database connection"""
+        self.db_path = db_path
+        self._create_tables()
 
-    def initialize(self):
-        """Create the database connection and initialize tables"""
-        try:
-            self.conn = sqlite3.connect(DB_FILE)
-            self.cursor = self.conn.cursor()
+    def _create_tables(self):
+        """Create necessary database tables if they don't exist"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
             
-            # Enable foreign keys
-            self.cursor.execute("PRAGMA foreign_keys = ON")
-            
-            # Create messages table
-            self.cursor.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
+            # Create repositories table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS repositories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    content TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    git_hash TEXT,
-                    UNIQUE(git_hash)
+                    name TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(owner, name)
                 )
             """)
             
-            self.conn.commit()
-        except sqlite3.Error as e:
-            print(f"Error initializing database: {e}")
-            raise
-
-    def close(self):
-        """Close the database connection"""
-        if self.conn:
-            self.conn.close()
-
-    def add_message(self, content: str, git_hash: Optional[str] = None) -> int:
-        """
-        Add a new message to the database
-        
-        Args:
-            content: The message content
-            git_hash: Optional Git commit hash associated with the message
-            
-        Returns:
-            The ID of the newly inserted message
-        """
-        try:
-            timestamp = datetime.now().isoformat()
-            self.cursor.execute("""
-                INSERT INTO messages (content, timestamp, git_hash)
-                VALUES (?, ?, ?)
-            """, (content, timestamp, git_hash))
-            self.conn.commit()
-            return self.cursor.lastrowid
-        except sqlite3.Error as e:
-            print(f"Error adding message: {e}")
-            self.conn.rollback()
-            raise
-
-    def get_message(self, message_id: int) -> Optional[Dict]:
-        """
-        Retrieve a specific message by ID
-        
-        Args:
-            message_id: The ID of the message to retrieve
-            
-        Returns:
-            Dictionary containing message data or None if not found
-        """
-        try:
-            self.cursor.execute("""
-                SELECT id, content, timestamp, git_hash
-                FROM messages
-                WHERE id = ?
-            """, (message_id,))
-            
-            row = self.cursor.fetchone()
-            if row:
-                return {
-                    'id': row[0],
-                    'content': row[1],
-                    'timestamp': row[2],
-                    'git_hash': row[3]
-                }
-            return None
-        except sqlite3.Error as e:
-            print(f"Error retrieving message: {e}")
-            raise
-
-    def get_all_messages(self) -> List[Dict]:
-        """
-        Retrieve all messages from the database
-        
-        Returns:
-            List of dictionaries containing message data
-        """
-        try:
-            self.cursor.execute("""
-                SELECT id, content, timestamp, git_hash
-                FROM messages
-                ORDER BY timestamp DESC
+            # Create messages table with repository reference
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    content TEXT NOT NULL,
+                    repository_id INTEGER,
+                    git_hash TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (repository_id) REFERENCES repositories(id)
+                )
             """)
             
-            return [{
-                'id': row[0],
-                'content': row[1],
-                'timestamp': row[2],
-                'git_hash': row[3]
-            } for row in self.cursor.fetchall()]
-        except sqlite3.Error as e:
-            print(f"Error retrieving messages: {e}")
-            raise
+            conn.commit()
 
-    def update_git_hash(self, message_id: int, git_hash: str) -> bool:
-        """
-        Update the Git hash for a message
-        
-        Args:
-            message_id: The ID of the message to update
-            git_hash: The Git commit hash to associate with the message
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            self.cursor.execute("""
-                UPDATE messages
-                SET git_hash = ?
-                WHERE id = ?
-            """, (git_hash, message_id))
-            self.conn.commit()
-            return True
-        except sqlite3.Error as e:
-            print(f"Error updating git hash: {e}")
-            self.conn.rollback()
-            return False
+    def add_repository(self, owner: str, name: str) -> int:
+        """Add a new repository to track"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "INSERT INTO repositories (owner, name) VALUES (?, ?)",
+                    (owner, name)
+                )
+                return cursor.lastrowid
+            except sqlite3.IntegrityError:
+                cursor.execute(
+                    "SELECT id FROM repositories WHERE owner = ? AND name = ?",
+                    (owner, name)
+                )
+                return cursor.fetchone()[0]
 
-# Create an instance of the database
-db = Database()
+    def get_repositories(self) -> List[Dict]:
+        """Get all tracked repositories"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM repositories ORDER BY created_at DESC")
+            return [dict(row) for row in cursor.fetchall()]
+
+    def add_message(self, content: str, repository_id: int, git_hash: Optional[str] = None) -> int:
+        """Add a new message"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO messages (content, repository_id, git_hash) VALUES (?, ?, ?)",
+                (content, repository_id, git_hash)
+            )
+            return cursor.lastrowid
+
+    def update_git_hash(self, message_id: int, git_hash: str):
+        """Update the Git hash for a message"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE messages SET git_hash = ? WHERE id = ?",
+                (git_hash, message_id)
+            )
+
+    def get_message(self, message_id: int) -> Optional[Dict]:
+        """Get a specific message by ID"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT m.*, r.owner, r.name as repo_name
+                FROM messages m
+                LEFT JOIN repositories r ON m.repository_id = r.id
+                WHERE m.id = ?
+            """, (message_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def get_all_messages(self, limit: int = 100) -> List[Dict]:
+        """Get all messages with repository information"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    m.*,
+                    r.owner,
+                    r.name as repo_name
+                FROM messages m
+                LEFT JOIN repositories r ON m.repository_id = r.id
+                ORDER BY m.timestamp DESC
+                LIMIT ?
+            """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_messages_by_repository(self, repository_id: int, limit: int = 50) -> List[Dict]:
+        """Get messages for a specific repository"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT 
+                    m.*,
+                    r.owner,
+                    r.name as repo_name
+                FROM messages m
+                LEFT JOIN repositories r ON m.repository_id = r.id
+                WHERE m.repository_id = ?
+                ORDER BY m.timestamp DESC
+                LIMIT ?
+            """, (repository_id, limit))
+            return [dict(row) for row in cursor.fetchall()]
